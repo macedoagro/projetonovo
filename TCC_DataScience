@@ -1,0 +1,255 @@
+require(raster)
+require(rgdal)
+require(sp)
+###abrindo o arquivos raster###
+img = stack("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico.tif")
+
+###Carregando shapefile###
+Shapefile = readOGR("c:/DATA_SCIENCE/tcc/Shapes/Area_De_Estudo.shp")
+
+plot(Shapefile)
+
+###Reprojetar Shapefile para UTM###
+crs(img)
+
+crs(Shapefile)
+
+Shapefile.utm = spTransform(x=Shapefile, CRSobj = crs(img))
+
+###Fazer Recorte Para a Área de Estudo###
+
+Shapefile.mask = mask(x = img, mask = Shapefile.utm)
+Shapefile.crop = crop(Shapefile.mask, Shapefile.utm)
+
+par (mfrow = c(1,2))
+plot(Shapefile.mask$Mosaico_1)
+plot(Shapefile.crop$Mosaico_1)
+
+###Salvar Recorte ###
+writeRaster(x = Shapefile.crop, filename = ("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico_Cortado.tif"))
+
+###abrindo raster recortado###
+
+img = stack("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico_Cortado.tif")
+
+plot(img)
+
+###Alterando Nomes###
+
+names(img) = c("B04", "B03", "B02", "B08")
+
+plot(img$B08)
+
+###Calculando os Indices de vegeta??o
+NDVI = (img$B08 - img$B04)/(img$B08 + img$B04)
+plot(NDVI)
+
+###Adicionando dados de NDVI no Stack
+
+img$NDVI = NDVI
+names (img)
+
+rm (NDVI)
+
+###EVI
+
+img$EVI = (2.5*((img$B08-img$B04)/10000))/(img$B08/10000+6*img$B04/10000-7.5*img$B02/10000+1)
+names (img)
+
+###OSAVI
+
+img$OSAVI = ((1 + 0.16)*(img$B08 - img$B04)/(img$B08 + img$B04 + 0.16))
+names (img)
+
+###Plot de indices
+par(mfrow = c(4,4))
+plot(img$NDVI, col = gray(0:100/100), main = "NDVI")
+plot(img$EVI, col = gray(0:100/100), main = "EVI")
+plot(img$OSAVI, col = gray(0:100/100), main = "OSAVI")
+
+###Salvando o Arquivo
+
+writeRaster(x = img, filename = ("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico_Cortado_ComIndices.tif"))
+nomes_img = names(img)
+write.csv(x = nomes_img, file = ("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Nomes_Bandas.csv"))
+
+#Carregar os pacotes
+
+require(raster)
+require(rgdal)
+require(rgeos)
+
+#Carregando o arquivo raster 
+
+Area_De_Estudo = stack("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico_Cortado_ComIndices.tif")
+
+names(Area_De_Estudo)
+
+#Importar csv com o nome das bandas
+nomes_bandas = read.table("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Nomes_Bandas.csv", header=T, sep = ',')
+print(nomes_bandas)
+
+names(Area_De_Estudo) = nomes_bandas[,2]
+names(Area_De_Estudo)
+
+#Importar o arquivo shapefile com as amostras 
+
+amostras = readOGR("C:/DATA_SCIENCE/tcc/Shapes/Amostras/Amostras.shp")
+View(data.frame(amostras))
+
+unidos.shp = gUnaryUnion(spgeom = amostras, id = amostras$Classe)
+names(unidos.shp)
+
+atributos = extract(x = Area_De_Estudo, y = unidos.shp)
+
+names(unidos.shp)
+
+Outros =      data.frame(Classe = "Outros", atributos[[1]])
+Palma_de_Oleo = data.frame(Classe = "Palma", atributos[[2]])
+Vegetação =   data.frame(Classe = "Vegetacao", atributos[[3]])
+
+amostras.final = rbind(Outros, Palma_de_Oleo, Vegetação)
+write.csv(amostras.final, 'C:/DATA_SCIENCE/tcc/Shapes/Amostras/amostras_extraidas.csv')
+#Carregando os pacotes
+
+require(dplyr)
+require(randomForest)
+require(e1071)
+require(caret)
+require(caTools)
+
+# Carregar o arquivo com as amostras
+
+dados = read.table("C:/DATA_SCIENCE/tcc/Shapes/Amostras/amostras_extraidas.csv", header=T, sep = ',')[,-1]
+
+head(dados)
+
+# Checar a class (strucutre dos meus dados)
+
+str(dados)
+
+dados$Classe = as.factor(dados$Classe)
+
+#Separação dos dados em treinamento e validação
+
+set.seed(1234)
+amostras_treino = sample.split(dados$Classe, SplitRatio = 0.7)
+(amostras_treino)
+
+
+##Separar em dados de treino e teste (criar o dataframe de treino e teste)
+
+train = dados[amostras_treino,]
+valid = dados[amostras_treino == F, ]
+
+write.csv(train, "C:/DATA_SCIENCE/tcc/Shapes/Amostras/dados_treino.csv")
+write.csv(valid, "C:/DATA_SCIENCE/tcc/Shapes/Amostras/dados_valid.csv")
+require(dplyr)
+require(randomForest)
+require(e1071)
+require(caret)
+
+
+# Carregar os arquivos de treino e validação
+
+treino = read.table("C:/DATA_SCIENCE/tcc/Shapes/Amostras/dados_treino.csv", header=T, sep = ',')[,-1]
+head(treino)
+
+treino$Classe = as.factor(treino$Classe)
+
+valid = read.table("C:/DATA_SCIENCE/tcc/Shapes/Amostras/dados_valid.csv", header=T, sep = ',')[,-1]
+head(valid)
+
+valid$Classe = as.factor(valid$Classe)
+
+### Vamos começar pelo RandomForest
+
+set.seed(1234)
+
+RF = randomForest(Classe~., data = treino, ntree = 100, mtry = 3, importance = T)
+
+varImpPlot(RF)
+
+#ou 
+
+importance(RF)
+
+set.seed(1234)
+
+SVM = svm(Classe~., kernel = 'polynomial', data = treino)
+
+
+## Validação dos modelos 
+
+pred.RF = predict(RF, valid)
+pred.SVM = predict(SVM, valid)
+
+## Criacao da matriz de confusão 
+
+CM.RF = confusionMatrix(data = pred.RF, reference = valid$Classe)
+CM.SVM = confusionMatrix(data = pred.SVM, reference = valid$Classe)
+
+print(CM.RF)
+print(CM.SVM)
+
+#Salvando os modelos
+
+saveRDS(object = RF, file = "C:/DATA_SCIENCE/tcc/Shapes/Amostras/classsificacao_rf.rds")
+saveRDS(object = SVM, file = "C:/DATA_SCIENCE/tcc/Shapes/Amostras/classsificacao_SVM.rds")
+
+require(randomForest)
+require(e1071)
+require(caret)
+require(raster)
+
+
+## Carregar os modelos
+
+RF = readRDS("C:/DATA_SCIENCE/tcc/Shapes/Amostras/classsificacao_rf.rds")
+SVM = readRDS("C:/DATA_SCIENCE/tcc/Shapes/Amostras/classsificacao_SVM.rds")
+
+
+## Carregar o tif com o nome das variaveis
+
+img = stack("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Mosaico_Cortado_ComIndices.tif")
+
+nomes = read.table("c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/Nomes_Bandas.csv", header=T, sep = ',')
+
+names(img) = nomes[,2]
+names(img)
+
+
+## Podemos entao, fazer a predicao para o nosso raster !!
+
+RF.raster = predict(img, RF)
+SVM.raster = predict(img, SVM)
+
+require(prettymapr)
+
+## Plot (salvo) para o RF 
+
+cores = c("pink", "orange", "green")
+
+classes = c("Outros", "Palma", "Vegetação")
+
+jpeg(filename = "c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/RF_class3.jpeg", width = 15, height = 15, res = 200, units = 'in')
+
+plot(RF.raster, legend = FALSE, col = cores, main = "Classificação Random Forest \n Area-Estudo",
+     cex.axis = 1.5, cex.main = 1.5)
+
+legend('topleft', legend = classes, fill = cores, border = FALSE, cex =2)
+
+addscalebar()
+addnortharrow(cols = c("black", 'black'), scale = 0.755)
+
+
+dev.off()
+
+
+## salvando os tifs
+
+writeRaster(RF.raster, "c:/DATA_SCIENCE/tcc/Imagens_/Mosaicos/random_forest_class.tif")
+writeRaster(SVM.raster, 'svm_class.tif')
+
+
+
