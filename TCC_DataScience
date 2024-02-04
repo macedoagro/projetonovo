@@ -166,7 +166,7 @@ valid$Classe = as.factor(valid$Classe)
 
 set.seed(1234)
 
-RF = randomForest(Classe~., data = treino, ntree = 100, mtry = 3, importance = T)
+RF = randomForest(Classe~., data = treino, ntree = 100, mtry = 7, importance = T)
 
 varImpPlot(RF)
 
